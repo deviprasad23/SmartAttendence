@@ -1,0 +1,9 @@
+com\example\attendance\repository\StudentRepository.class
+com\example\attendance\service\FaceRecognitionService.class
+com\example\attendance\model\Student.class
+com\example\attendance\repository\AttendanceRepository.class
+com\example\attendance\config\CorsConfig.class
+com\example\attendance\controller\StudentController.class
+com\example\attendance\AttendanceApplication.class
+com\example\attendance\model\AttendanceRecord.class
+com\example\attendance\controller\AttendanceController.class
