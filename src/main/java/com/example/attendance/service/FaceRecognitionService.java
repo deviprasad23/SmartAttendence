@@ -17,7 +17,10 @@ public class FaceRecognitionService {
 
     private static final Logger log = Logger.getLogger(FaceRecognitionService.class.getName());
     private static final Size FACE_SIZE = new Size(100, 100);
-    private static final double MATCH_THRESHOLD = 8000;
+    // Absolute max distance to consider a match
+    private static final double MATCH_THRESHOLD = 6000;
+    // Best match must be at least this ratio better than second best (prevents wrong-student matches)
+    private static final double MIN_GAP_RATIO = 1.20;
 
     @Value("${app.faces.dir:data/faces}")
     private String facesDir;
@@ -86,6 +89,7 @@ public class FaceRecognitionService {
 
         long bestLabel = -1;
         double bestDistance = Double.MAX_VALUE;
+        double secondBestDistance = Double.MAX_VALUE;
 
         for (File studentDir : studentDirs) {
             long studentId;
@@ -96,6 +100,9 @@ public class FaceRecognitionService {
                 n.toLowerCase().endsWith(".jpg") || n.toLowerCase().endsWith(".png"));
             if (faceFiles == null || faceFiles.length == 0) continue;
 
+            // Use average distance across all stored images for this student
+            double totalDist = 0;
+            int count = 0;
             for (File f : faceFiles) {
                 Mat stored = Imgcodecs.imread(f.getAbsolutePath(), Imgcodecs.IMREAD_GRAYSCALE);
                 if (stored.empty()) continue;
@@ -103,19 +110,36 @@ public class FaceRecognitionService {
                     Imgproc.resize(stored, stored, FACE_SIZE);
                 }
                 Core.normalize(stored, stored, 0, 255, Core.NORM_MINMAX);
+                totalDist += Core.norm(probe, stored, Core.NORM_L2);
+                count++;
+            }
+            if (count == 0) continue;
 
-                double distance = Core.norm(probe, stored, Core.NORM_L2);
-                log.info("student=" + studentId + " file=" + f.getName() + " distance=" + String.format("%.1f", distance));
+            double avgDist = totalDist / count;
+            log.info("student=" + studentId + " avgDistance=" + String.format("%.1f", avgDist));
 
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    bestLabel = studentId;
-                }
+            if (avgDist < bestDistance) {
+                secondBestDistance = bestDistance;
+                bestDistance = avgDist;
+                bestLabel = studentId;
+            } else if (avgDist < secondBestDistance) {
+                secondBestDistance = avgDist;
             }
         }
 
-        log.info("Best: student=" + bestLabel + " distance=" + String.format("%.1f", bestDistance) + " threshold=" + MATCH_THRESHOLD);
+        log.info("Best: student=" + bestLabel + " dist=" + String.format("%.1f", bestDistance)
+            + " secondBest=" + String.format("%.1f", secondBestDistance)
+            + " threshold=" + MATCH_THRESHOLD);
+
         if (bestLabel < 0 || bestDistance > MATCH_THRESHOLD) return null;
+
+        // Reject if second best is too close (ambiguous match)
+        if (secondBestDistance < Double.MAX_VALUE && secondBestDistance < bestDistance * MIN_GAP_RATIO) {
+            log.warning("Match rejected: gap too small (best=" + String.format("%.1f", bestDistance)
+                + " secondBest=" + String.format("%.1f", secondBestDistance) + ")");
+            return null;
+        }
+
         return bestLabel;
     }
 
